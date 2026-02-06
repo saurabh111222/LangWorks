@@ -3,7 +3,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, RemoveMessage
 from langchain_core.runnables import RunnableConfig
 from pydantic import Field, BaseModel
 from uuid import uuid4
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 # from sentence_transformers import SentenceTransformer
 from langchain_openai import OpenAIEmbeddings
@@ -19,7 +19,7 @@ QDRANT_URL = os.environ.get("QDRANT_URL")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY")
 
 
-qdrant_client = QdrantClient(
+qdrant_client = AsyncQdrantClient(
     url=QDRANT_URL, 
     api_key=QDRANT_API_KEY,
 )
@@ -30,15 +30,15 @@ embeddings = OpenAIEmbeddings(
         )
 
 
-def memory_context(state: GraphState, config: RunnableConfig):
+async def memory_context(state: GraphState, config: RunnableConfig):
     user_id = config['configurable']['user_id']
     collection_name = f"collection_{user_id}"
     recent_context = " ".join([f"- {m.content}" for m in state["messages"][-3:]])
     
     ######## memory module
-    top_revalent_memories =  qdrant_client.query_points(
+    top_revalent_memories =  await qdrant_client.query_points(
         collection_name=collection_name,
-        query=embeddings.embed_query(recent_context),
+        query=await embeddings.aembed_query(recent_context),
         limit=3
     )
     top_revalent_memories_blob = '\n'.join([f'- {mem.payload.get('text', '')}' for mem in top_revalent_memories.points[:2]]) #high score --> low score
@@ -104,17 +104,17 @@ async def extract_and_store_memory(state: GraphState, config: RunnableConfig):
 
     ######## memory module
     # Check if user specific collection already exists - create if not exists - collection_<user_id>
-    if not qdrant_client.collection_exists(collection_name):
-        qdrant_client.create_collection(
+    if not await qdrant_client.collection_exists(collection_name):
+        await qdrant_client.create_collection(
                 collection_name=collection_name,
                 vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
         )
 
     memories_to_store = []
     for mem in analysed_memories:
-        related_memory = qdrant_client.query_points(
+        related_memory = await qdrant_client.query_points(
             collection_name=collection_name,
-            query=embeddings.embed_query(mem),
+            query=await embeddings.aembed_query(mem),
             limit=1
         )
         print(f"related_memory: {related_memory}")
@@ -127,13 +127,13 @@ async def extract_and_store_memory(state: GraphState, config: RunnableConfig):
 
     points = [PointStruct(
     id=str(uuid4()),
-    vector=embeddings.embed_query(memory),
+    vector=await embeddings.aembed_query(memory),
     payload={
         "text": memory,
         # **metadata,
     }) for memory in memories_to_store]
 
-    qdrant_client.upsert(
+    await qdrant_client.upsert(
         collection_name=collection_name,
         points=points
     )
