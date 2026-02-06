@@ -11,6 +11,7 @@ from src.graph.state import GraphState
 from src.graph.utils.chains import get_response_chain
 from src.core.prompts import MEMORY_ANALYSIS_PROMPT
 import os
+import asyncio
 
 llm = ChatOpenAI(model='gpt-4.1-mini')
 SUMMARY_THRESHOLD = 10
@@ -110,20 +111,33 @@ async def extract_and_store_memory(state: GraphState, config: RunnableConfig):
                 vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
         )
 
+    if not analysed_memories:
+        return {}
+
     memories_to_store = []
-    for mem in analysed_memories:
-        related_memory = await qdrant_client.query_points(
+    check_vectors = await embeddings.aembed_documents(analysed_memories)
+
+    async def check_duplicate(memory, vector):
+        results = await qdrant_client.query_points(
             collection_name=collection_name,
-            query=await embeddings.aembed_query(mem),
+            query=vector,
             limit=1
         )
-        print(f"related_memory: {related_memory}")
+        print(f"related_memory: {results}")
         # isinstance(related_memory.points[0], ScoredPoint)
-        if (related_memory.points and related_memory.points[0].score < 0.9) or len(related_memory.points)==0:
-            memories_to_store.append(mem)  
+        if len(results.points)==0 or (results.points[0].score < 0.9):
+            return memory
+        else:
+            return None
+
+    duplicate_check_tasks = [check_duplicate(memory, vector) for memory, vector in zip(analysed_memories, check_vectors)]
+    duplicate_check_results = await asyncio.gather(*duplicate_check_tasks)
+    memories_to_store = [res for res in duplicate_check_results if res is not None]
 
     if not memories_to_store:
         return {}
+    
+    print(f"memories_to_store: {memories_to_store}")
     
     vectors = await embeddings.aembed_documents(memories_to_store)
 
@@ -139,7 +153,6 @@ async def extract_and_store_memory(state: GraphState, config: RunnableConfig):
         collection_name=collection_name,
         points=points
     )
-    print(f"memories_to_store: {memories_to_store}")
     ########
     
     return {}
