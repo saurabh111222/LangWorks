@@ -124,14 +124,16 @@ async def extract_and_store_memory(state: GraphState, config: RunnableConfig):
 
     if not memories_to_store:
         return {}
+    
+    vectors = await embeddings.aembed_documents(memories_to_store)
 
     points = [PointStruct(
     id=str(uuid4()),
-    vector=await embeddings.aembed_query(memory),
+    vector=vector,
     payload={
         "text": memory,
         # **metadata,
-    }) for memory in memories_to_store]
+    }) for memory, vector in zip(memories_to_store, vectors)]
 
     await qdrant_client.upsert(
         collection_name=collection_name,
