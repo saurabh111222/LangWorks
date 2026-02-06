@@ -123,10 +123,10 @@ async def extract_and_store_memory(state: GraphState, config: RunnableConfig):
             query=vector,
             limit=1
         )
-        print(f"related_memory: {results}")
+        # print(f"related_memory: {results}")
         # isinstance(related_memory.points[0], ScoredPoint)
         if len(results.points)==0 or (results.points[0].score < 0.9):
-            return memory
+            return (memory, vector)
         else:
             return None
 
@@ -137,9 +137,9 @@ async def extract_and_store_memory(state: GraphState, config: RunnableConfig):
     if not memories_to_store:
         return {}
     
-    print(f"memories_to_store: {memories_to_store}")
+    # print(f"memories_to_store: {memories_to_store}")
     
-    vectors = await embeddings.aembed_documents(memories_to_store)
+    # vectors = await embeddings.aembed_documents(memories_to_store)
 
     points = [PointStruct(
     id=str(uuid4()),
@@ -147,7 +147,7 @@ async def extract_and_store_memory(state: GraphState, config: RunnableConfig):
     payload={
         "text": memory,
         # **metadata,
-    }) for memory, vector in zip(memories_to_store, vectors)]
+    }) for memory, vector in memories_to_store]
 
     await qdrant_client.upsert(
         collection_name=collection_name,
