@@ -8,12 +8,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from src.graph import graph_builder
 from langchain_core.messages import HumanMessage
 import asyncio
 
 async def main():
-    checkpointer = InMemorySaver()
+    # checkpointer = InMemorySaver()
+    DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres"
+    async with AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer:
+        # Run ONCE (creates tables)
+        await checkpointer.setup()
+
     user_id = 'user123'
     config = {'configurable': {'thread_id': 'thread123', 'user_id': user_id}}
     # graph_builder = build_graph()
